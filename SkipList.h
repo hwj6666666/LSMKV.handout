@@ -5,135 +5,211 @@
 #include <limits>
 #include <cstdlib>
 
-template<typename K, typename V>
-class Node {
+template <typename K, typename V>
+class Node
+{
 public:
     K key;
     V value;
-    std::vector<Node<K, V>*> forward;
+    std::vector<Node<K, V> *> forward;
 
-    Node(const K& key, const V& value, int level);
+    Node(const K &key, const V &value, int level);
 };
 
-template<typename K, typename V>
-class SkipList {
+template <typename K, typename V>
+class SkipList
+{
 public:
     SkipList(int maxLevel);
     ~SkipList();
-    void put(const K& key, const V& value);
-    void deleteKey(const K& key);
-    V get(const K& key);
-    std::map<K, V> scan(const K& key1, const K& key2);
+    void put(const K &key, const V &value);
+    void deleteKey(const K &key);
+    V get(const K &key);
+    std::map<K, V> scan(const K &key1, const K &key2);
+    bool isExist(const K &key);
+    void reset();
 
 private:
-    Node<K, V>* header;
+    Node<K, V> *header;
     int maxLevel;
     int randomLevel();
 };
 
-template<typename K, typename V>
-Node<K, V>::Node(const K& key, const V& value, int level) : key(key), value(value), forward(level, nullptr) {}
+template <typename K, typename V>
+Node<K, V>::Node(const K &key, const V &value, int level) : key(key), value(value), forward(level, nullptr) {}
 
-template<typename K, typename V>
-SkipList<K, V>::SkipList(int maxLevel) : maxLevel(maxLevel) {
+template <typename K, typename V>
+SkipList<K, V>::SkipList(int maxLevel) : maxLevel(maxLevel)
+{
     K k;
     V v;
     header = new Node<K, V>(k, v, maxLevel);
 }
 
-template<typename K, typename V>
-SkipList<K, V>::~SkipList() {
+template <typename K, typename V>
+SkipList<K, V>::~SkipList()
+{
     delete header;
 }
 
-template<typename K, typename V>
-int SkipList<K, V>::randomLevel() {
+template <typename K, typename V>
+int SkipList<K, V>::randomLevel()
+{
     int level = 1;
-    while ((rand() % 2) == 1 && level < maxLevel) {
+    while ((rand() % 2) == 1 && level < maxLevel)
+    {
         level++;
     }
     return level;
 }
 
-template<typename K, typename V>
-void SkipList<K, V>::put(const K& key, const V& value) {
-    std::vector<Node<K, V>*> update(maxLevel);
-    Node<K, V>* x = header;
-    for (int i = maxLevel - 1; i >= 0; i--) {
-        while (x->forward[i] != nullptr && x->forward[i]->key < key) {
-            x = x->forward[i];
-        }
-        update[i] = x;
-    }
-    int level = randomLevel();
-    if (level > maxLevel) {
-        for (int i = maxLevel; i < level; i++) {
-            update[i] = header;
-        }
-        maxLevel = level;
-    }
-    x = new Node<K, V>(key, value, level);
-    for (int i = 0; i < level; i++) {
-        x->forward[i] = update[i]->forward[i];
-        update[i]->forward[i] = x;
-    }
-}
-
-template<typename K, typename V>
-void SkipList<K, V>::deleteKey(const K& key) {
-    std::vector<Node<K, V>*> update(maxLevel);
-    Node<K, V>* x = header;
-    for (int i = maxLevel - 1; i >= 0; i--) {
-        while (x->forward[i] != nullptr && x->forward[i]->key < key) {
+template <typename K, typename V>
+void SkipList<K, V>::put(const K &key, const V &value)
+{
+    std::vector<Node<K, V> *> update(maxLevel);
+    Node<K, V> *x = header;
+    for (int i = maxLevel - 1; i >= 0; i--)
+    {
+        while (x->forward[i] != nullptr && x->forward[i]->key < key)
+        {
             x = x->forward[i];
         }
         update[i] = x;
     }
     x = x->forward[0];
-    if (x->key == key) {
-        for (int i = 0; i < maxLevel; i++) {
-            if (update[i]->forward[i] != x) {
+    if (x != nullptr && x->key == key)
+    {
+        // If a node with the same key exists, update its value
+        x->value = value;
+    }
+    else
+    {
+        // Otherwise, insert a new node
+        int level = randomLevel();
+        if (level > maxLevel)
+        {
+            for (int i = maxLevel; i < level; i++)
+            {
+                update[i] = header;
+            }
+            maxLevel = level;
+        }
+        x = new Node<K, V>(key, value, level);
+        for (int i = 0; i < level; i++)
+        {
+            x->forward[i] = update[i]->forward[i];
+            update[i]->forward[i] = x;
+        }
+    }
+}
+
+template <typename K, typename V>
+void SkipList<K, V>::deleteKey(const K &key)
+{
+    std::vector<Node<K, V> *> update(maxLevel);
+    Node<K, V> *x = header;
+    for (int i = maxLevel - 1; i >= 0; i--)
+    {
+        while (x->forward[i] != nullptr && x->forward[i]->key < key)
+        {
+            x = x->forward[i];
+        }
+        update[i] = x;
+    }
+    x = x->forward[0];
+    if (x->key == key)
+    {
+        for (int i = 0; i < maxLevel; i++)
+        {
+            if (update[i]->forward[i] != x)
+            {
                 break;
             }
             update[i]->forward[i] = x->forward[i];
         }
         delete x;
-        while (maxLevel > 1 && header->forward[maxLevel] == nullptr) {
+        while (maxLevel > 1 && header->forward[maxLevel] == nullptr)
+        {
             maxLevel--;
         }
     }
 }
 
-template<typename K, typename V>
-V SkipList<K, V>::get(const K& key) {
-    Node<K, V>* x = header;
-    for (int i = maxLevel - 1; i >= 0; i--) {
-        while (x->forward[i] != nullptr && x->forward[i]->key < key) {
+template <typename K, typename V>
+V SkipList<K, V>::get(const K &key)
+{
+    if (header->forward[0] == nullptr)
+    {
+        return V(); // Return default value if the list is empty
+    }
+
+    Node<K, V> *x = header;
+    for (int i = maxLevel - 1; i >= 0; i--)
+    {
+        while (x->forward[i] != nullptr && x->forward[i]->key < key)
+        {
             x = x->forward[i];
         }
     }
     x = x->forward[0];
-    if (x->key == key) {
+    if (x->key == key)
+    {
         return x->value;
     }
     return V();
 }
 
-template<typename K, typename V>
-std::map<K, V> SkipList<K, V>::scan(const K& key1, const K& key2) {
+template <typename K, typename V>
+std::map<K, V> SkipList<K, V>::scan(const K &key1, const K &key2)
+{
     std::map<K, V> result;
-    Node<K, V>* x = header;
-    for (int i = maxLevel - 1; i >= 0; i--) {
-        while (x->forward[i] != nullptr && x->forward[i]->key < key1) {
+    Node<K, V> *x = header;
+    for (int i = maxLevel - 1; i >= 0; i--)
+    {
+        while (x->forward[i] != nullptr && x->forward[i]->key < key1)
+        {
             x = x->forward[i];
         }
     }
     x = x->forward[0];
-    while (x != nullptr && x->key <= key2) {
+    while (x != nullptr && x->key <= key2)
+    {
         result[x->key] = x->value;
         x = x->forward[0];
     }
     return result;
 }
 
-#endif //UNTITLED_SKIPLIST_H
+template <typename K, typename V>
+bool SkipList<K, V>::isExist(const K &key)
+{
+    Node<K, V> *x = header;
+    for (int i = maxLevel - 1; i >= 0; i--)
+    {
+        while (x->forward[i] != nullptr && x->forward[i]->key < key)
+        {
+            x = x->forward[i];
+        }
+    }
+    x = x->forward[0];
+    return x != nullptr && x->key == key;
+}
+
+template <typename K, typename V>
+void SkipList<K, V>::reset()
+{
+    Node<K, V> *current = header->forward[0];
+    while (current != nullptr)
+    {
+        Node<K, V> *temp = current;
+        current = current->forward[0];
+        delete temp;
+    }
+    for (int i = 0; i < maxLevel; i++)
+    {
+        header->forward[i] = nullptr;
+    }
+    maxLevel = 1;
+}
+
+#endif // UNTITLED_SKIPLIST_H

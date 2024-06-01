@@ -1,13 +1,16 @@
 #include "kvstore.h"
 #include <string>
 
+#include <iostream> // Add this line
 KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(dir, vlog)
 {
 	MemTable = new SkipList<uint64_t, string>(32);
+	std::cout << "KVStore constructed" << std::endl;
 }
 
 KVStore::~KVStore()
 {
+	delete MemTable;
 }
 
 /**
@@ -16,6 +19,8 @@ KVStore::~KVStore()
  */
 void KVStore::put(uint64_t key, const std::string &s)
 {
+	// std::cout << "PUT" << key << endl;
+	MemTable->put(key, s);
 }
 /**
  * Returns the (string) value of the given key.
@@ -23,7 +28,8 @@ void KVStore::put(uint64_t key, const std::string &s)
  */
 std::string KVStore::get(uint64_t key)
 {
-	return "";
+	// std::cout << "GET" << key << endl;
+	return MemTable->get(key);
 }
 /**
  * Delete the given key-value pair if it exists.
@@ -31,6 +37,12 @@ std::string KVStore::get(uint64_t key)
  */
 bool KVStore::del(uint64_t key)
 {
+	// std::cout<<"DEL"<<key<<endl;
+	if (MemTable->isExist(key))
+	{
+		MemTable->deleteKey(key);
+		return true;
+	}
 	return false;
 }
 
@@ -40,6 +52,7 @@ bool KVStore::del(uint64_t key)
  */
 void KVStore::reset()
 {
+	MemTable->reset();
 }
 
 /**
@@ -49,6 +62,12 @@ void KVStore::reset()
  */
 void KVStore::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list)
 {
+	map<uint64_t, string> result = MemTable->scan(key1, key2);
+
+	for (auto it = result.begin(); it != result.end(); ++it)
+	{
+		list.push_back(*it);
+	}
 }
 
 /**
