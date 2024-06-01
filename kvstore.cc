@@ -3,6 +3,7 @@
 
 KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(dir, vlog)
 {
+	MemTable = new SkipList<uint64_t, string>(32);
 }
 
 KVStore::~KVStore()
