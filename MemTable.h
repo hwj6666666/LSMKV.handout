@@ -47,16 +47,16 @@ private:
 template <typename K, typename V>
 MemTable<K, V>::MemTable(int maxLevel) : maxLevel(maxLevel), nodeCount(0)
 {
-    K k = K();  // 使用默认构造函数初始化K
-    V v = V();  // 使用默认构造函数初始化V
+    K k = K(); // 使用默认构造函数初始化K
+    V v = V(); // 使用默认构造函数初始化V
     header = new Node<K, V>(k, v, maxLevel);
 }
 
 template <typename K, typename V>
 MemTable<K, V>::MemTable() : maxLevel(MAXLEVEL), nodeCount(0)
 {
-    K k = K();  // 使用默认构造函数初始化K
-    V v = V();  // 使用默认构造函数初始化V
+    K k = K(); // 使用默认构造函数初始化K
+    V v = V(); // 使用默认构造函数初始化V
     header = new Node<K, V>(k, v, maxLevel);
 }
 
@@ -99,7 +99,7 @@ void MemTable<K, V>::put(const K &key, const V &value)
     x = x->forward[0];
     if (x != nullptr && x->key == key)
     {
-        x->value = value;  // 更新已有节点的值
+        x->value = value; // 更新已有节点的值
     }
     else
     {
@@ -113,12 +113,12 @@ void MemTable<K, V>::put(const K &key, const V &value)
             maxLevel = level;
         }
         x = new Node<K, V>(key, value, level);
+        nodeCount++;
         for (int i = 0; i < level; i++)
         {
             x->forward[i] = update[i]->forward[i];
             update[i]->forward[i] = x;
         }
-        nodeCount++;
     }
 }
 
@@ -172,7 +172,7 @@ V MemTable<K, V>::get(const K &key)
     {
         return x->value;
     }
-    return V();  // 返回默认值
+    return V(); // 返回默认值
 }
 
 template <typename K, typename V>
@@ -180,7 +180,7 @@ void MemTable<K, V>::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint
 {
     if (key1 > key2)
     {
-        return;  // 无效范围
+        return; // 无效范围
     }
 
     Node<K, V> *x = header;
@@ -228,7 +228,7 @@ void MemTable<K, V>::reset()
     {
         header->forward[i] = nullptr;
     }
-    maxLevel = MAXLEVEL;  // 重置到初始最大层级
+    maxLevel = MAXLEVEL; // 重置到初始最大层级
     nodeCount = 0;
 }
 

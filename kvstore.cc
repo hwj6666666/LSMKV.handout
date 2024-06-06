@@ -2,15 +2,33 @@
 #include <string>
 
 #include <iostream> // Add this line
+#include "parameters.h"
+#include "SSTable.h"
 KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(dir, vlog)
 {
-	MemTable = new SkipList<uint64_t, string>(32);
-	std::cout << "KVStore constructed" << std::endl;
+	if (!utils::dirExists(dir))
+	{
+		utils::_mkdir(dir);
+	}
+
+	vLog = new VLOG::VLog(vlog);
+
+	allLevelSSTables = new LevelSSTables(vLog);
+
+	this->dir = dir;
+	this->vlog = vlog;
+
+	memTable = new MemTable<uint64_t, string>();
+
+	iniTimestamp();
 }
 
 KVStore::~KVStore()
 {
-	delete MemTable;
+	memToDisk();
+	delete memTable;
+	allLevelSSTables->~LevelSSTables();
+	delete allLevelSSTables;
 }
 
 /**
@@ -19,8 +37,12 @@ KVStore::~KVStore()
  */
 void KVStore::put(uint64_t key, const std::string &s)
 {
-	// std::cout << "PUT" << key << endl;
-	MemTable->put(key, s);
+	memTable->put(key, s);
+
+	if (memTable->size() >= MAXMEMBER)
+	{
+		memToDisk();
+	}
 }
 /**
  * Returns the (string) value of the given key.
@@ -28,8 +50,18 @@ void KVStore::put(uint64_t key, const std::string &s)
  */
 std::string KVStore::get(uint64_t key)
 {
-	// std::cout << "GET" << key << endl;
-	return MemTable->get(key);
+	string result = memTable->get(key);
+
+	if (result == "~DELETED~")
+	{
+		return "";
+	}
+	else if (result != "")
+		return result;
+	else
+	{
+		return allLevelSSTables->getValueByKey(key);
+	}
 }
 /**
  * Delete the given key-value pair if it exists.
@@ -37,13 +69,13 @@ std::string KVStore::get(uint64_t key)
  */
 bool KVStore::del(uint64_t key)
 {
-	// std::cout<<"DEL"<<key<<endl;
-	if (MemTable->isExist(key))
+	if (get(key) == "" )
+		return false;
+	else
 	{
-		MemTable->deleteKey(key);
+		put(key, "~DELETED~");
 		return true;
 	}
-	return false;
 }
 
 /**
@@ -52,7 +84,26 @@ bool KVStore::del(uint64_t key)
  */
 void KVStore::reset()
 {
-	MemTable->reset();
+	timestamp = 1;
+
+	std::string dir = "./data"; // Replace with your directory path
+
+	// Check if the path exists and is a directory
+	if (std::filesystem::exists(dir) && std::filesystem::is_directory(dir))
+	{
+		// Remove the directory and all its contents
+		std::filesystem::remove_all(dir);
+	}
+
+	// After removing, you may want to recreate the directory
+	std::filesystem::create_directories(dir);
+
+	memTable->reset();
+
+	vLog = new VLOG::VLog(vlog);
+
+	allLevelSSTables->~LevelSSTables();
+	allLevelSSTables = new LevelSSTables(vLog);
 }
 
 /**
@@ -62,12 +113,11 @@ void KVStore::reset()
  */
 void KVStore::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list)
 {
-	map<uint64_t, string> result = MemTable->scan(key1, key2);
+	memTable->scan(key1, key2, list);
 
-	for (auto it = result.begin(); it != result.end(); ++it)
-	{
-		list.push_back(*it);
-	}
+	allLevelSSTables->scan(key1, key2, list);
+
+	list.sort();
 }
 
 /**
@@ -76,4 +126,127 @@ void KVStore::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, s
  */
 void KVStore::gc(uint64_t chunk_size)
 {
+	map<uint64_t, pair<uint64_t, string>> result = vLog->getKAndOffset(chunk_size);
+
+	for (const auto &pair : result)
+	{
+		uint64_t key = pair.first;
+		uint64_t offset = pair.second.first;
+		string value = pair.second.second;
+
+		if (memTable->isExist(key))
+		{
+		}
+
+		else if (allLevelSSTables->getOffset(key) == offset)
+		{
+			memTable->put(key, value);
+		}
+	}
+
+	if (memTable->size() > 0)
+		memToDisk();
+}
+
+void KVStore::compaction()
+{
+	return;
+}
+
+int KVStore::countLevel(int n)
+{
+	std::string dir = "./data/level-" + std::to_string(n);
+
+	// Check if the path exists and is a directory
+	if (!std::filesystem::exists(dir) || !std::filesystem::is_directory(dir))
+	{
+		return 0;
+	}
+
+	int fileCount = 0;
+
+	for (const auto &entry : std::filesystem::directory_iterator(dir))
+	{
+		if (entry.is_regular_file())
+		{
+			fileCount++;
+		}
+	}
+
+	return fileCount;
+}
+
+void KVStore::memToDisk()
+{
+
+	map<uint64_t, string> result = memTable->getAll();
+
+	if (result.size() == 0)
+		return;
+
+	memTable->reset();
+
+	SSTable *ssTable = new SSTable(timestamp);
+	timestamp++;
+
+	for (const auto &pair : result)
+	{
+		uint64_t key = pair.first;
+		std::string value = pair.second;
+
+		if (value == "~DELETED~")
+		{
+			ssTable->addTuple(key, 0, 0);
+		}
+		else
+		{
+			uint64_t offset = vLog->append(key, value);
+			ssTable->addTuple(key, offset, value.length());
+		}
+	}
+
+	ssTable->flush();
+	allLevelSSTables->addSSTable(ssTable);
+
+	if (countLevel(0) > 2)
+	{
+		compaction();
+	}
+}
+
+void KVStore::iniTimestamp()
+{
+	string path = "./data/level-0";
+	if (!utils::dirExists(path))
+	{
+		timestamp = 1;
+		return;
+	}
+
+	std::vector<std::string> files;
+	if (utils::scanDir(path, files) <= 0)
+	{
+		timestamp = 1;
+		return;
+	}
+
+	int maxFileNum = 1;
+	for (const auto &file : files)
+	{
+		size_t pos = file.find(".sst");
+		if (pos != std::string::npos)
+		{
+			try
+			{
+				int num = std::stoi(file.substr(0, pos));
+				maxFileNum = std::max(maxFileNum, num);
+			}
+			catch (const std::invalid_argument &)
+			{
+				// Ignore files that do not start with a number
+			}
+		}
+	}
+
+	timestamp = maxFileNum + 1;
 }

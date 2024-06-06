@@ -9,6 +9,7 @@
 #include <filesystem>
 #include "BloomFilter.h"
 #include "MemTable.h"
+#include "VLog.h"
 
 struct Header
 {
@@ -31,21 +32,21 @@ private:
     Header header;
     BloomFilter bloomFilter;
     std::map<uint64_t, Tuple> tuples;
-    std::string dir;
 
 public:
-    inline SSTable(const std::string &dir, uint64_t timestamp);
+    inline SSTable(uint64_t timestamp);
     inline void addTuple(uint64_t key, uint64_t offset, uint32_t vlen);
     inline void flush();
     inline uint64_t getMinestKey() const { return header.min_key; }
     inline uint64_t getMaxestKey() const { return header.max_key; }
+    inline uint64_t getTimestamp() const { return header.timestamp; }
     inline bool checkKey(uint64_t key);
     inline Tuple getTuple(uint64_t key);
-    inline void scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list, VLog *vLog);
+    inline void scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list, VLOG::VLog *vLog);
     inline void load(const std::string &filename);
 };
 
-SSTable::SSTable(const std::string &dir, uint64_t timestamp) : dir(dir)
+SSTable::SSTable(uint64_t timestamp)
 {
     header.timestamp = timestamp;
     header.kv_count = 0;
@@ -74,6 +75,13 @@ void SSTable::addTuple(uint64_t key, uint64_t offset, uint32_t vlen)
 
 Tuple SSTable::getTuple(uint64_t key)
 {
+    auto it = tuples.find(key);
+    if (it != tuples.end())
+    {
+        return it->second;
+    }
+    else
+        cout << "Key" << key << "is checked but no found in SSTable" << endl;
 }
 
 bool SSTable::checkKey(uint64_t key)
@@ -86,19 +94,32 @@ bool SSTable::checkKey(uint64_t key)
     else
         return false;
 }
-void SSTable::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list, VLog *vLog)
+void SSTable::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list, VLOG::VLog *vLog)
 {
-    // auto it = tuples.lower_bound(key1);
-    // while (it != tuples.end() && it->first <= key2)
-    // {
-    //     list.push_back(std::make_pair(it->first, vLog->get(it->second.offset, it->second.vlen)));
-    //     ++it;
-    // }
+    auto it = tuples.lower_bound(key1);
+    while (it != tuples.end() && it->first <= key2)
+    {
+
+        bool found = false;
+        for (const auto &pair : list)
+        {
+            if (pair.first == it->first)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found && it->second.vlen != 0)
+
+            list.push_back(std::make_pair(it->first, vLog->get(it->second.offset, it->second.vlen)));
+        ++it;
+    }
 }
 
 void SSTable::flush()
 {
-    std::string level_dir = dir + "/level-0";
+    std::string level_dir = "./data/level-0";
     if (!utils::dirExists(level_dir))
     {
         utils::_mkdir(level_dir);
@@ -117,6 +138,7 @@ void SSTable::flush()
     for (const auto &pair : tuples)
     {
         const Tuple &tuple = pair.second;
+
         file.write(reinterpret_cast<const char *>(&tuple), sizeof(tuple));
     }
 
