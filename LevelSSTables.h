@@ -47,6 +47,7 @@ LevelSSTables::LevelSSTables(VLOG::VLog *vlog)
 {
     this->vLog = vlog;
     levelSSTables[0] = std::set<SSTable *, SSTablePtrComp>(SSTablePtrComp(true));
+    cacheSSTable();
 }
 LevelSSTables::~LevelSSTables()
 {
@@ -117,6 +118,8 @@ uint64_t LevelSSTables::getOffset(uint64_t key)
 {
     uint64_t tempOff = 0;
 
+    bool isDeleted = true;
+
     for (auto &level : levelSSTables)
     {
         std::set<SSTable *, SSTablePtrComp> &ssTables = level.second;
@@ -127,8 +130,20 @@ uint64_t LevelSSTables::getOffset(uint64_t key)
             {
 
                 Tuple tuple = ssTable->getTuple(key);
-                if (tuple.offset > tempOff)
-                    tempOff = tuple.offset;
+                if (tuple.vlen == 0)
+                {
+                    if (isDeleted)
+                        return 0;
+                    else
+                        return tempOff;
+                }
+                else
+                {
+                    isDeleted = false;
+
+                    if (tuple.offset > tempOff)
+                        tempOff = tuple.offset;
+                }
             }
         }
     }

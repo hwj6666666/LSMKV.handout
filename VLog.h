@@ -3,6 +3,7 @@
 #include "MemTable.h"
 #include "utils.h"
 #include <iostream>
+#include <assert.h>
 using namespace std;
 #ifndef VLOG_H
 #define VLOG_H
@@ -43,7 +44,7 @@ namespace VLOG
     private:
         std::string filename;
         std::fstream file;
-        // uint64_t tail, head;
+        uint64_t tail;
 
     public:
         inline VLog(const std::string &filename);
@@ -63,7 +64,7 @@ namespace VLOG
     }
 
     VLog::VLog(const std::string &filename)
-        : filename(filename)
+        : filename(filename), tail(0)
     {
     // Open the file in read-write mode. If the file does not exist, it will be created.
     boo:
@@ -78,6 +79,7 @@ namespace VLOG
 
             goto boo;
         }
+        tail=getTail();
     }
 
     uint64_t VLog::append(uint64_t key, const std::string &value)
@@ -125,17 +127,23 @@ namespace VLOG
 
         file.seekp(0, std::ios::end);
         uint64_t head = file.tellp();
-        uint64_t tail = getTail();
-        uint64_t fileSize = head - tail; // 获取文件大小
+        uint64_t start = tail;
 
-        while (totalSize < chunk_size && tail < head)
+        while ((tail < head) && (totalSize < chunk_size))
         {
+
             file.seekg(tail);
 
             Entry entry;
 
-            if (!file.read((char *)&entry.magic, sizeof(entry.magic)) || entry.magic != 0xff) // 检查是否到达文件末尾或者文件格式错误
-                break;
+            if (!file.read((char *)&entry.magic, sizeof(entry.magic))) // 检查是否到达文件末尾或者文件格式错误
+                assert(0);
+            // break;
+            if (entry.magic != 0xff)
+            {
+                cout << entry.magic << endl;
+                assert(0);
+            }
 
             if (!file.read((char *)&entry.checksum, sizeof(entry.checksum)) ||
                 !file.read((char *)&entry.key, sizeof(entry.key)) ||
@@ -168,15 +176,14 @@ namespace VLOG
             uint64_t entrySize = sizeof(entry.magic) + sizeof(entry.checksum) + sizeof(entry.key) + sizeof(entry.vlen) + entry.vlen;
             totalSize += entrySize;
 
-            // 打洞
-            if (utils::de_alloc_file(filename, tail, entrySize) != 0)
-            {
-                cerr << "Failed to de-allocate file space at offset: " << tail << endl;
-                break;
-            }
-
             // 更新 tail，但不要超过文件末尾
-            tail = std::min(tail + entrySize, fileSize);
+            // tail = std::min(tail + entrySize, fileSize);
+            tail = tail + entrySize;
+        }
+        // 打洞
+        if (utils::de_alloc_file(filename, start, totalSize) != 0)
+        {
+            cerr << "Failed to de-allocate file space at offset: " << tail << endl;
         }
 
         return result;

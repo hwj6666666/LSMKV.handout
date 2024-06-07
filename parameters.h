@@ -4,5 +4,5 @@
 // the max member in MemTable
 //  #define MAXMEMBER   339
 
-#define MAXMEMBER  339
-// #define MAXMEMBER  1
+// #define MAXMEMBER  339
+#define MAXMEMBER  400
