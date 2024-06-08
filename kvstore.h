@@ -15,6 +15,7 @@ private:
 	uint64_t timestamp;
 	MemTable<uint64_t, string> *memTable;
 	VLOG::VLog *vLog;
+	int *fileNum;
 	string dir;
 	string vlog;
 	LevelSSTables *allLevelSSTables;

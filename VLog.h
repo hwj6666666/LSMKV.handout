@@ -194,7 +194,7 @@ namespace VLOG
         off_t offset = utils::seek_data_block(filename);
         if (offset < 0)
         {
-            std::cerr << "Failed to seek data block in file: " << filename << std::endl;
+            // std::cerr << "Failed to seek data block in file: " << filename << std::endl;
             return 0;
         }
 

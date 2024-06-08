@@ -32,22 +32,30 @@ private:
     Header header;
     BloomFilter bloomFilter;
     std::map<uint64_t, Tuple> tuples;
+    string relatedFile;
+    int *fileNum;
 
 public:
-    inline SSTable(uint64_t timestamp);
+    inline SSTable(uint64_t timestamp, int *fileNum);
     inline void addTuple(uint64_t key, uint64_t offset, uint32_t vlen);
-    inline void flush();
+    inline void flush(int level);
     inline uint64_t getMinestKey() const { return header.min_key; }
     inline uint64_t getMaxestKey() const { return header.max_key; }
     inline uint64_t getTimestamp() const { return header.timestamp; }
+    inline uint64_t getKvCount() const { return header.kv_count; }
     inline bool checkKey(uint64_t key);
     inline Tuple getTuple(uint64_t key);
     inline void scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list, VLOG::VLog *vLog);
     inline void load(const std::string &filename);
+    inline void deletedRelatedFile();
+    inline void merge(SSTable *ssTable);
+    inline const std::map<uint64_t, Tuple> &getTuples() const { return tuples; }
+    inline void eraseTrash();
 };
 
-SSTable::SSTable(uint64_t timestamp)
+SSTable::SSTable(uint64_t timestamp, int *fileNum)
 {
+    this->fileNum = fileNum;
     header.timestamp = timestamp;
     header.kv_count = 0;
     header.min_key = std::numeric_limits<uint64_t>::max();
@@ -117,15 +125,22 @@ void SSTable::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, s
     }
 }
 
-void SSTable::flush()
+void SSTable::flush(int level)
 {
-    std::string level_dir = "./data/level-0";
+    if (header.kv_count == 0)
+        return;
+
+    std::string level_dir = "./data/level-" + std::to_string(level);
+
     if (!utils::dirExists(level_dir))
     {
         utils::_mkdir(level_dir);
     }
 
-    std::string filename = level_dir + "/" + std::to_string(header.timestamp) + ".sst";
+    std::string filename = level_dir + "/" + std::to_string(*fileNum) + ".sst";
+    (*fileNum) += 1;
+    relatedFile = filename;
+
     std::ofstream file(filename, std::ios::binary);
     if (!file)
     {
@@ -175,6 +190,53 @@ void SSTable::load(const std::string &filename)
     }
 
     file.close();
+}
+void SSTable::deletedRelatedFile()
+{
+    std::filesystem::remove(relatedFile);
+}
+void SSTable::eraseTrash()
+{
+    for (auto it = tuples.begin(); it != tuples.end();)
+    {
+        if (it->second.vlen == 0)
+        {
+            it = tuples.erase(it);
+            header.kv_count--;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+void SSTable::merge(SSTable *ssTable)
+{
+    for (const auto &pair : ssTable->getTuples())
+    {
+        const Tuple &tuple = pair.second;
+        if (tuples.find(pair.first) == tuples.end())
+        {
+            addTuple(pair.first, tuple.offset, tuple.vlen);
+            header.kv_count++;
+            if (pair.first < header.min_key)
+                header.min_key = pair.first;
+            if (pair.first > header.max_key)
+                header.max_key = pair.first;
+        }
+        else
+        {
+            if (header.timestamp < ssTable->getTimestamp())
+            {
+                cout << "MERGE AND ENTER" << endl;
+                tuples[pair.first] = pair.second;
+            }
+        }
+    }
+
+    if (ssTable->getTimestamp() > header.timestamp)
+        header.timestamp = ssTable->getTimestamp();
 }
 
 #endif // CODEPROJECTTEST_SSTABLE_H

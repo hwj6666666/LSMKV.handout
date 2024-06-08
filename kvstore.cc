@@ -13,7 +13,6 @@ KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(d
 
 	vLog = new VLOG::VLog(vlog);
 
-	allLevelSSTables = new LevelSSTables(vLog);
 
 	this->dir = dir;
 	this->vlog = vlog;
@@ -21,6 +20,9 @@ KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(d
 	memTable = new MemTable<uint64_t, string>();
 
 	iniTimestamp();
+	fileNum = new int(timestamp);
+
+	allLevelSSTables = new LevelSSTables(vLog, fileNum);
 }
 
 KVStore::~KVStore()
@@ -29,6 +31,7 @@ KVStore::~KVStore()
 	delete memTable;
 	allLevelSSTables->~LevelSSTables();
 	delete allLevelSSTables;
+	delete fileNum;
 }
 
 /**
@@ -69,7 +72,7 @@ std::string KVStore::get(uint64_t key)
  */
 bool KVStore::del(uint64_t key)
 {
-	if (get(key) == "" )
+	if (get(key) == "")
 		return false;
 	else
 	{
@@ -103,7 +106,8 @@ void KVStore::reset()
 	vLog = new VLOG::VLog(vlog);
 
 	allLevelSSTables->~LevelSSTables();
-	allLevelSSTables = new LevelSSTables(vLog);
+	allLevelSSTables = new LevelSSTables(vLog, fileNum);
+	*fileNum = 1;
 }
 
 /**
@@ -150,6 +154,7 @@ void KVStore::gc(uint64_t chunk_size)
 
 void KVStore::compaction()
 {
+	allLevelSSTables->compaction();
 	return;
 }
 
@@ -186,7 +191,7 @@ void KVStore::memToDisk()
 
 	memTable->reset();
 
-	SSTable *ssTable = new SSTable(timestamp);
+	SSTable *ssTable = new SSTable(timestamp, fileNum);
 	timestamp++;
 
 	for (const auto &pair : result)
@@ -205,7 +210,7 @@ void KVStore::memToDisk()
 		}
 	}
 
-	ssTable->flush();
+	ssTable->flush(0);
 	allLevelSSTables->addSSTable(ssTable);
 
 	if (countLevel(0) > 2)
@@ -216,34 +221,45 @@ void KVStore::memToDisk()
 
 void KVStore::iniTimestamp()
 {
-	string path = "./data/level-0";
-	if (!utils::dirExists(path))
+	string basePath = "./data";
+	if (!utils::dirExists(basePath))
 	{
 		timestamp = 1;
 		return;
 	}
 
-	std::vector<std::string> files;
-	if (utils::scanDir(path, files) <= 0)
+	std::vector<std::string> levelDirs;
+	if (utils::scanDir(basePath, levelDirs) <= 0)
 	{
 		timestamp = 1;
 		return;
 	}
 
 	int maxFileNum = 1;
-	for (const auto &file : files)
+	for (const auto &levelDir : levelDirs)
 	{
-		size_t pos = file.find(".sst");
-		if (pos != std::string::npos)
+		if (levelDir.find("level-") != 0)
+			continue; // Skip directories not starting with "level-"
+
+		string path = basePath + "/" + levelDir;
+		std::vector<std::string> files;
+		if (utils::scanDir(path, files) <= 0)
+			continue; // Skip empty directories
+
+		for (const auto &file : files)
 		{
-			try
+			size_t pos = file.find(".sst");
+			if (pos != std::string::npos)
 			{
-				int num = std::stoi(file.substr(0, pos));
-				maxFileNum = std::max(maxFileNum, num);
-			}
-			catch (const std::invalid_argument &)
-			{
-				// Ignore files that do not start with a number
+				try
+				{
+					int num = std::stoi(file.substr(0, pos));
+					maxFileNum = std::max(maxFileNum, num);
+				}
+				catch (const std::invalid_argument &)
+				{
+					// Ignore files that do not start with a number
+				}
 			}
 		}
 	}
